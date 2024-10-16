@@ -6,7 +6,7 @@ import unicodedata
 import re
 from ebooklib import epub
 import uuid
-from lxml import etree
+import zipfile
 
 NUM_CHAPTER_PER_PAGE = 50
 
@@ -160,6 +160,28 @@ def create_epub_from_chapters(chapters):
     epub.write_epub(epub_path, book, {})
     print(f"** Saved EPUB to {epub_path} **")
 
+def create_txt_from_chapters(chapters):
+    current_path = os.getcwd()
+    dir_path = os.path.join(current_path, f"zip/{remove_diacritics(chapters[0]['album'])}")
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path, exist_ok=True)
+    for i, chapter in enumerate(chapters):
+        with open(f"{dir_path}/chapter_{i+1}.txt", "w", encoding="utf-8") as f:
+            f.write(f'''
+                        {chapter['title']}
+                        {chapter['content']}
+                    ''')
+            print(f"** Saved TXT to chapter_{i+1}.txt **")
+    
+    zip_folder(dir_path, f"{dir_path}.zip")
+
+def zip_folder(folder_path, output_zip_path):
+    with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        for foldername, subfolders, filenames in os.walk(folder_path):
+            for filename in filenames:
+                file_path = os.path.join(foldername, filename)
+                zip_file.write(file_path, os.path.relpath(file_path, folder_path))
+
 async def main():
     print("*********************************************START*************************************************************")
     chapters = get_all_chapter("https://metruyenvip.com/truyen/dragon-ball-tu-thoat-di-hanh-tinh-vegeta-bat-dau-41987", 0, 1)
@@ -169,8 +191,9 @@ async def main():
     for chapter in chapters:
         chapterFull.append(create_epub_chapter(chapter))
 
-    # Xử lý tạo EPUB sau khi có nội dung các chương
-    create_epub_from_chapters(chapterFull)
+    # # Xử lý tạo EPUB sau khi có nội dung các chương
+    # create_epub_from_chapters(chapterFull)
+    create_txt_from_chapters(chapterFull)
 
 if __name__ == "__main__":
     asyncio.run(main())
