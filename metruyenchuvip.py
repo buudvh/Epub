@@ -7,8 +7,27 @@ import re
 from ebooklib import epub
 import uuid
 import zipfile
+import subprocess
+import os
 
 NUM_CHAPTER_PER_PAGE = 50
+
+def convert_epub3_to_epub2(input_epub, output_path):
+    # Run Calibre's ebook-convert command to convert to EPUB 2
+    try:
+        subprocess.run([
+            "ebook-convert",         # Calibre's CLI tool
+            input_epub,              # Input EPUB 3 file
+            output_path,             # Output EPUB 2 file
+            "--epub-version=2",           # Force conversion to EPUB 2
+            "--no-default-epub-cover",
+
+        ], check=True)
+        print(f"Conversion successful: {output_path}")
+    except subprocess.CalledProcessError as e:
+        print(f"Error during conversion: {e}")
+    finally:
+        os.remove(input_epub)
 
 def remove_diacritics(text):
     normalized_string = unicodedata.normalize('NFD', text)
@@ -109,7 +128,7 @@ def create_epub_from_chapters(chapters):
             margin: 5%;
             text-align: justify;
         }
-        h1 {
+        h4 {
             text-align: center;
             color: #333;
             margin-bottom: 2em;
@@ -128,7 +147,7 @@ def create_epub_from_chapters(chapters):
     chapters_epub = []
     for i, chapter in enumerate(chapters):
         chapter_content = f'''
-            <h1>{chapter['title']}</h1>
+            <h4>{chapter['title']}</h4>
             {chapter['content']}
         '''
         
@@ -149,38 +168,19 @@ def create_epub_from_chapters(chapters):
     book.add_item(epub.EpubNav())
     
     # Thiết lập spine
-    book.spine = ['nav'] + chapters_epub
+    book.spine = chapters_epub
     
     # Lưu tệp EPUB
     current_path = os.getcwd()
     dir_path = os.path.join(current_path, "epub")
     if not os.path.exists(dir_path):
         os.makedirs(dir_path, exist_ok=True)
-    epub_path = os.path.join(dir_path, remove_diacritics(chapters[0]['album']) + '.epub')
-    epub.write_epub(epub_path, book, {"epub3_pages": False})
-    print(f"** Saved EPUB to {epub_path} **")
-
-def create_txt_from_chapters(chapters):
-    current_path = os.getcwd()
-    dir_path = os.path.join(current_path, f"zip/{remove_diacritics(chapters[0]['album'])}")
-    if not os.path.exists(dir_path):
-        os.makedirs(dir_path, exist_ok=True)
-    for i, chapter in enumerate(chapters):
-        with open(f"{dir_path}/chapter_{i+1}.txt", "w", encoding="utf-8") as f:
-            f.write(f'''
-                        {chapter['title']}
-                        {chapter['content']}
-                    ''')
-            print(f"** Saved TXT to chapter_{i+1}.txt **")
-    
-    zip_folder(dir_path, f"{dir_path}.zip")
-
-def zip_folder(folder_path, output_zip_path):
-    with zipfile.ZipFile(output_zip_path, 'w', zipfile.ZIP_DEFLATED) as zip_file:
-        for foldername, subfolders, filenames in os.walk(folder_path):
-            for filename in filenames:
-                file_path = os.path.join(foldername, filename)
-                zip_file.write(file_path, os.path.relpath(file_path, folder_path))
+    filename = remove_diacritics(chapters[0]['album']) + '.epub'
+    epub2_path = os.path.join(dir_path, filename)
+    epub3_path = os.path.join(dir_path, f'temp_{filename}')
+    epub.write_epub(epub3_path, book)
+    convert_epub3_to_epub2(epub3_path, epub2_path)
+    print(f"** Saved EPUB to {epub2_path} **")
 
 async def main():
     print("*********************************************START*************************************************************")
@@ -192,8 +192,8 @@ async def main():
         chapterFull.append(create_epub_chapter(chapter))
 
     # # Xử lý tạo EPUB sau khi có nội dung các chương
-    # create_epub_from_chapters(chapterFull)
-    create_txt_from_chapters(chapterFull)
+    create_epub_from_chapters(chapterFull)
+    # create_txt_from_chapters(chapterFull)
 
 if __name__ == "__main__":
     asyncio.run(main())
