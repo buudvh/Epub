@@ -6,9 +6,12 @@ import unicodedata
 import re
 from ebooklib import epub
 import uuid
-import zipfile
 import subprocess
 import os
+import asyncio
+import nest_asyncio
+
+nest_asyncio.apply()
 
 NUM_CHAPTER_PER_PAGE = 50
 
@@ -62,14 +65,16 @@ def calculate_chapter_list(start, lenght):
     list_page = []
     start_page_num = int((start+1)/NUM_CHAPTER_PER_PAGE)
     end_page_num = int((start+lenght)/NUM_CHAPTER_PER_PAGE)
-    list_page.append(start_page_num)
-    if start_page_num != end_page_num:
-        list_page.append(end_page_num)
-    return list_page
+    return list(range(start_page_num, end_page_num + 1))
 
 def get_book_name(soup):
     title_tag = soup.find_all('h1')
     return title_tag[0].text
+
+def get_author_name(soup):
+    info_tag = soup.find_all('div', class_='detail-info')
+    author_tag = info_tag[0].find_all('h2')
+    return author_tag[0].text
 
 def get_all_chapter(book_link, start, lenght):
     list_page = calculate_chapter_list(start, lenght)
@@ -79,6 +84,8 @@ def get_all_chapter(book_link, start, lenght):
         soup = BeautifulSoup(response.content, "html.parser")
 
         book_name = get_book_name(soup)
+
+        author_name = get_author_name(soup)
 
         chapter_list_tab = soup.find('div', id='divtab').find('ul', class_='w3-ul')
         chapter_tags = chapter_list_tab.find_all('li')
@@ -95,7 +102,10 @@ def get_all_chapter(book_link, start, lenght):
             chapter = {
                 'link': link_tag['href'],
                 'title': chapter_tag.find('a').text,
-                'album': book_name
+                'album': book_name,
+                'content': '',
+                'index': index,
+                'author': author_name
             }
             chapters.append(chapter)
     return chapters
@@ -120,6 +130,7 @@ def create_epub_from_chapters(chapters):
     book.set_identifier(str(uuid.uuid4()))
     book.set_title(chapters[0]['album']) 
     book.set_language('vi')
+    book.add_author(chapters[0]['author'])
     
     # CSS cho định dạng
     style = '''
@@ -182,18 +193,23 @@ def create_epub_from_chapters(chapters):
     convert_epub3_to_epub2(epub3_path, epub2_path)
     print(f"** Saved EPUB to {epub2_path} **")
 
+async def async_process_chapter(chapter):
+    async with semaphore:
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, create_epub_chapter, chapter)
+
+semaphore = asyncio.Semaphore(10)
+
 async def main():
     print("*********************************************START*************************************************************")
-    chapters = get_all_chapter("https://metruyenvip.com/truyen/dragon-ball-tu-thoat-di-hanh-tinh-vegeta-bat-dau-41987", 0, 1)
+    chapters = get_all_chapter("https://metruyenvip.com/truyen/dragon-ball-tu-thoat-di-hanh-tinh-vegeta-bat-dau-41987", 0, 100)
 
-    # Lấy nội dung của các chương
-    chapterFull = []
-    for chapter in chapters:
-        chapterFull.append(create_epub_chapter(chapter))
+    # Xử lý tạo TXT sau khi có nội dung các chương
+    task = [async_process_chapter(chapter) for chapter in chapters]
+    await asyncio.gather(*task)
 
-    # # Xử lý tạo EPUB sau khi có nội dung các chương
-    create_epub_from_chapters(chapterFull)
-    # create_txt_from_chapters(chapterFull)
+    # Xử lý tạo EPUB sau khi có nội dung các chương
+    create_epub_from_chapters(chapters)
 
 if __name__ == "__main__":
     asyncio.run(main())

@@ -1,3 +1,6 @@
+import os
+import zipfile
+
 def create_txt_from_chapters(chapters):
     current_path = os.getcwd()
     dir_path = os.path.join(current_path, f"zip/{remove_diacritics(chapters[0]['album'])}")
