@@ -157,7 +157,7 @@ def create_epub_from_chapters(chapters):
     if not os.path.exists(dir_path):
         os.makedirs(dir_path, exist_ok=True)
     epub_path = os.path.join(dir_path, remove_diacritics(chapters[0]['album']) + '.epub')
-    epub.write_epub(epub_path, book, {})
+    epub.write_epub(epub_path, book, {"epub3_pages": False})
     print(f"** Saved EPUB to {epub_path} **")
 
 def create_txt_from_chapters(chapters):
