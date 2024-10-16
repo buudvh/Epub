@@ -30,13 +30,6 @@ def remove_diacritics(text):
     result_string = ''.join(result)
     return re.sub(r'[\W_]', '', result_string)
 
-# def get_chapter_content(soup):
-#     content_body_tag = soup.find(id="content")
-#     if content_body_tag:
-#         for tag in content_body_tag.find_all(['a', 'div']):
-#             if tag.name == 'a' or tag.name == 'div':
-#                     tag.extract()
-#     return "\n".join(content_body_tag.stripped_strings)
 def get_chapter_content(soup):
     content_body_tag = soup.find(id="content")
     if content_body_tag:
