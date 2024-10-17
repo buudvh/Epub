@@ -61,10 +61,11 @@ def get_chapter_content(soup):
         return "<p>" + "</p><p>".join(content_body_tag.stripped_strings) + "</p>"
     return ""
 
-def calculate_chapter_list(start, lenght):
-    list_page = []
+def calculate_chapter_list(start, lenght, book_link):
+    max_page = get_max_page(book_link).strip()
     start_page_num = int((start+1)/NUM_CHAPTER_PER_PAGE)
     end_page_num = int((start+lenght)/NUM_CHAPTER_PER_PAGE)
+    end_page_num = min(int(max_page)-1, end_page_num)
     return list(range(start_page_num, end_page_num + 1))
 
 def get_book_name(soup):
@@ -76,8 +77,14 @@ def get_author_name(soup):
     author_tag = info_tag[0].find_all('h2')
     return author_tag[0].text
 
+def get_max_page(book_link):
+    response = requests.get(book_link)
+    soup = BeautifulSoup(response.content, "html.parser")
+    numbpage_tag = soup.find_all('span', class_='numbpage')
+    return numbpage_tag[0].text.split('/')[-1]
+
 def get_all_chapter(book_link, start, lenght):
-    list_page = calculate_chapter_list(start, lenght)
+    list_page = calculate_chapter_list(start, lenght, book_link)
     chapters = []
     for page in list_page:
         response = requests.get(book_link+f"?trang={page+1}")
@@ -202,7 +209,7 @@ semaphore = asyncio.Semaphore(10)
 
 async def main():
     print("*********************************************START*************************************************************")
-    chapters = get_all_chapter("https://metruyenvip.com/truyen/dragon-ball-tu-thoat-di-hanh-tinh-vegeta-bat-dau-41987", 0, 100)
+    chapters = get_all_chapter("https://metruyenvip.com/truyen/toan-cau-luan-hoi-ta-than-phan-co-van-de-32606", 0, 2500)
 
     # Xử lý tạo TXT sau khi có nội dung các chương
     task = [async_process_chapter(chapter) for chapter in chapters]
