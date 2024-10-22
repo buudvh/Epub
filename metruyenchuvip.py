@@ -126,7 +126,6 @@ def create_epub_chapter(chapter):
         text = get_chapter_content(soup).replace('"', '').replace('“', '').replace('”', '')
         if text != '':
             chapter['content'] = text
-            print(f"** Retrieved '{chapter['title']}'")
         else:
             failCnt += 1
     return chapter
