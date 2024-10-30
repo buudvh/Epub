@@ -13,6 +13,9 @@ import nest_asyncio
 # from google.colab import files
 from tqdm.asyncio import tqdm_asyncio
 from tqdm import tqdm
+import urllib.parse
+from PIL import Image, ImageDraw, ImageFont
+import textwrap
 
 nest_asyncio.apply()
 
@@ -39,60 +42,91 @@ def remove_diacritics(text):
     return re.sub(r'[\W_]', '', result_string)
 
 def get_chapter_content(soup):
-    content_tag = soup.find('div', id='chapter-content')
+    content_tag = soup.find_all('div', class_='mw-parser-output')[0]
     if content_tag:
         for tag in content_tag.find_all(['a', 'div', 'center']):
-            tag.extract()  # Loại bỏ các thẻ không cần thiết
-        # Tạo nội dung hợp lệ cho XHTML
+            tag.extract()
         return "<p>" + "</p><p>".join(content_tag.stripped_strings) + "</p>"
     return ""
 
-def get_list_chapter_in_page(book_link, page):
-    url = 'https://ntruyen.top//ajax/load_chapter'
-    payload = {
-        'story_id': int(get_story_id(book_link)),
-        'page': page + 1
-    }
+def calculate_chapter_list(book_link):
+    chap_list = [book_link]
+    chapter_tags = None
+    max_page = 1000000
 
-    response = requests.post(url, data=payload)
-
-    if response.status_code == 200:
-        data = response.json()
-    else:
-        data = None
-
-    return data
-
-def get_story_id(url):
-    return url.split('/')[-1].split('.')[0].split('-')[-1]
-
-def get_all_chapter(book_link, start, lenght):
-    chapters = []
     #get max page
     response = requests.get(book_link)
     soup = BeautifulSoup(response.content, "html.parser")
+    content_tag = soup.find_all('div', class_='mw-parser-output')[0]
+    for p in content_tag.find_all('p'):
+        if "Trang:" in p.get_text(strip=True):
+            chapter_tags = p.find_all('a')
+            break
 
-    max_page = int(soup.find('button', id='goto-page').get("data-total"))
-    book_inf_tag = soup.find_all('div', class_='story-title')[0];
-    book_name = book_inf_tag.find_all('h1')[0].text
-    author_name = book_inf_tag.find_all('a')[0].text
-    cover_img = soup.find_all('div', class_='cover')[0].find_all('img')[0]['src']
+    if chapter_tags is None:
+        return chap_list
 
-    for i, p in tqdm(enumerate(range(max_page)), total=max_page, desc=f"Getting book information progress", unit="pages", ncols= 150):
-        data = get_list_chapter_in_page(book_link, p)
-        if data:
-            soup_chapter = BeautifulSoup(data["chapters"], "html.parser")
-            chapter_tags = soup_chapter.find_all('a')
-            for tag in chapter_tags:
-                chapters.append({
-                'link': tag['href'],
-                'title': tag.text,
+    root_url = get_root_url(book_link)
+
+    for tag in chapter_tags:
+        chap_list.append(f"{root_url}{tag['href']}")
+    return chap_list
+
+def get_book_name(soup):
+    content_tag = soup.find_all('div', class_='mw-parser-output')[0]
+    title_tag = content_tag.find_all('span', class_='title')
+    return title_tag[0].text
+
+def get_author_name(soup):
+    author_tag = None
+    content_tag = soup.find_all('div', class_='mw-parser-output')[0]
+    for span in content_tag.find_all('span'):
+        if "Tác giả:" in span.get_text(strip=True):
+            author_tag = span.find_all('a')[0]
+            break
+
+    if author_tag is None:
+        return "Sưu tầm"
+
+    return author_tag.text
+
+def get_root_url(url):
+    parsed_url = urllib.parse.urlparse(url)
+    return parsed_url.scheme + "://" + parsed_url.netloc
+
+def get_all_chapter(book_link, start, lenght):
+    list_page = calculate_chapter_list(book_link)
+    root_url = get_root_url(book_link)
+    chapters = []
+    for i, page in tqdm(enumerate(list_page), total=len(list_page), desc=f"Getting book information progress", unit="pages", ncols= 150):
+        response = requests.get(page)
+        soup = BeautifulSoup(response.content, "html.parser")
+
+        book_name = get_book_name(soup)
+
+        author_name = get_author_name(soup)
+
+        content_tag = soup.find_all('div', class_='mw-parser-output')[0]
+        chapter_list_tab = content_tag.find_all('ul', class_='subpagelist')[0]
+        chapter_tags = chapter_list_tab.find_all('li')
+        for index, chapter_tag in enumerate(chapter_tags):
+            index = index + i*NUM_CHAPTER_PER_PAGE
+
+            link_tag = chapter_tag.find('a')
+
+            if link_tag is None:
+                continue
+
+            chapter = {
+                'link': f"{root_url}{link_tag['href']}",
+                'title': chapter_tag.find('a').text.replace("\n", ""),
                 'album': book_name,
                 'content': '',
+                'index': index,
                 'author': author_name,
-                'cover': cover_img
-            })
-
+                'cover': '/content/cover.jpg'
+            }
+            chapters.append(chapter)
     return chapters
 
 def create_epub_chapter(chapter):
@@ -108,24 +142,14 @@ def create_epub_chapter(chapter):
             failCnt += 1
     return chapter
 
-def download_image_from_url(url, save_path):
-    response = requests.get(url)
-    if response.status_code == 200:
-        with open(save_path, 'wb') as f:
-            f.write(response.content)
-        return True
-    else:
-        return False
-
-def create_epub_from_chapters(chapters):
+def create_epub_from_chapters(chapters, cover_img_path):
     book = epub.EpubBook()
 
     book.set_identifier(str(uuid.uuid4()))
     book.set_title(chapters[0]['album'])
     book.set_language('vi')
     book.add_author(chapters[0]['author'])
-    if download_image_from_url(chapters[0]['cover'], 'cover.jpg'):
-      book.set_cover("cover.jpg", open('cover.jpg', 'rb').read())
+    # book.set_cover("cover.jpg", open(cover_img_path, 'rb').read(), create_page=False)
 
     # CSS cho định dạng
     style = '''
@@ -142,7 +166,7 @@ def create_epub_from_chapters(chapters):
     '''
     # Tạo tệp CSS
     nav_css = epub.EpubItem(
-        uid="style_nav",
+        uid=str(uuid.uuid3(uuid.NAMESPACE_URL, "style/nav.css")),
         file_name="style/nav.css",
         media_type="text/css",
         content=style
@@ -187,13 +211,12 @@ def create_epub_from_chapters(chapters):
     #save epub
     epub.write_epub(epub3_path, book)
     #convert to epub2
-    convert_epub3_to_epub2(epub3_path, epub2_path)
-    #download
-    # files.download(epub2_path)
-    # !cp "{epub2_path}" /content/drive/MyDrive/vBook
-    print(f"** Saved EPUB {epub2_path} to your drive**")
+    convert_epub3_to_epub2(epub3_path, epub2_path, cover_img_path)
+    #move to google drive
+    !cp "{epub2_path}" /content/drive/MyDrive/vBook
+    # print(f"** Saved EPUB {epub2_path} to your drive**")
 
-def convert_epub3_to_epub2(input_epub, output_path):
+def convert_epub3_to_epub2(input_epub, output_path, cover_img_path):
     # Run Calibre's ebook-convert command to convert to EPUB 2
     try:
         subprocess.run([
@@ -201,31 +224,63 @@ def convert_epub3_to_epub2(input_epub, output_path):
             input_epub,              # Input EPUB 3 file
             output_path,             # Output EPUB 2 file
             "--epub-version=2",           # Force conversion to EPUB 2
+            "--remove-first-image",
             # "--no-default-epub-cover",
-
+            f"--cover={cover_img_path}",
+            # "--no-svg-cover"
         ], check=True)
         print(f"Conversion successful: {output_path}")
     except subprocess.CalledProcessError as e:
         print(f"Error during conversion: {e}")
-    finally:
-        os.remove(input_epub)
+    # finally:
+    #     os.remove(input_epub)
 
 async def async_process_chapter(chapter):
     async with semaphore:
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, create_epub_chapter, chapter)
 
+def create_cover_image(text, output_file, font_path="/content/drive/MyDrive/Font/Roboto-Regular.ttf"):
+    width, height = 215, 322
+    background_color = (200, 230, 255)  # Màu nền
+
+    image = Image.new("RGB", (width, height), background_color)
+    draw = ImageDraw.Draw(image)
+
+    text_color = (0, 0, 0)
+    font_size = 30
+
+    font = ImageFont.truetype(font_path, font_size, encoding="unic")
+
+    wrapped_text = textwrap.fill(text, width=7)
+
+    lines = wrapped_text.splitlines()
+    total_text_height = sum(draw.textbbox((0, 0), line, font=font)[3] - draw.textbbox((0, 0), line, font=font)[1] for line in lines)
+    current_y = (height - total_text_height) // 2
+
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        line_width, line_height = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        line_x = (width - line_width) // 2
+        draw.text((line_x, current_y), line, fill=text_color, font=font)
+        current_y += line_height
+
+    image.save(output_file)
+
 semaphore = asyncio.Semaphore(20)
 
 async def main():
     # get all chapter infor
-    chapters = get_all_chapter("https://ntruyen.top/truyen/tong-vo-bat-dau-max-cap-gia-y-than-cong-68083.html", 0, 5000)
+    chapters = get_all_chapter("https://truyenkiemhiep.com.vn/Anh_h%C3%B9ng_%C4%90%C3%B4ng_A_d%E1%BB%B1ng_c%E1%BB%9D_b%C3%ACnh_M%C3%B4ng", 0, 5000)
     # get all chapter content
     tasks = [async_process_chapter(chapter) for chapter in chapters]
+    # create cover image
+    cover_img_path = f"/content/{uuid.uuid4()}.jpg"
+    create_cover_image(text=chapters[0]['album'], output_file=cover_img_path)
     print(f"** Retrieved '{chapters[0]['album']}' ({len(chapters)} chapters)")
     [await task for task in tqdm_asyncio(asyncio.as_completed(tasks), total=len(tasks), desc=f"Leeching progress", unit="books", ncols=150)]
     # Xử lý tạo EPUB sau khi có nội dung các chương
-    create_epub_from_chapters(chapters)
+    create_epub_from_chapters(chapters, cover_img_path)
 
 if __name__ == "__main__":
     asyncio.run(main())
