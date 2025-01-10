@@ -213,7 +213,7 @@ def create_epub_from_chapters(chapters, cover_img_path):
     #convert to epub2
     convert_epub3_to_epub2(epub3_path, epub2_path, cover_img_path)
     #move to google drive
-    !cp "{epub2_path}" /content/drive/MyDrive/vBook
+    # !cp "{epub2_path}" /content/drive/MyDrive/vBook
     # print(f"** Saved EPUB {epub2_path} to your drive**")
 
 def convert_epub3_to_epub2(input_epub, output_path, cover_img_path):
