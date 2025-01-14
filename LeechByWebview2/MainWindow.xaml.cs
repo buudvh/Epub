@@ -30,6 +30,7 @@ namespace LeechByWebview2
         {
             if (e.IsSuccess)
             {
+                WebView.CoreWebView2.OpenDevToolsWindow();
                 await WaitForSpinnerToDisappear();
             }
             else
@@ -44,6 +45,8 @@ namespace LeechByWebview2
 
             while (spinnerExists)
             {
+                string active = "$('#content-container > center').click();";
+                await WebView.CoreWebView2.ExecuteScriptAsync(active);
                 string script = "$('.spinner-border').length === 0";
                 string result = await WebView.CoreWebView2.ExecuteScriptAsync(script);
 
@@ -62,11 +65,11 @@ namespace LeechByWebview2
         {
             try
             {
-                string htmlContent = await WebView.CoreWebView2.ExecuteScriptAsync("document.documentElement.outerHTML");
+                string htmlContent = await WebView.CoreWebView2.ExecuteScriptAsync("document.getElementById(\"content-container\").textContent");
 
                 htmlContent = System.Text.Json.JsonSerializer.Deserialize<string>(htmlContent);
 
-                string filePath = Path.Combine(Settings.Default.OutputPath, "DownloadedPage.html");
+                string filePath = Path.Combine(Settings.Default.OutputPath, $"DownloadedPage_{DateTime.Now:yyyyMMddhhmmss}.txt");
 
                 if(!Directory.Exists(Settings.Default.OutputPath))
                 {
@@ -102,16 +105,6 @@ namespace LeechByWebview2
             };
 
             notifyIcon.ShowBalloonTip(3000);
-        }
-
-        protected override void OnStateChanged(EventArgs e)
-        {
-            if (WindowState == WindowState.Minimized)
-            {
-                this.Hide();
-            }
-
-            base.OnStateChanged(e);
         }
 
         protected override void OnClosed(EventArgs e)
