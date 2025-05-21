@@ -1,5 +1,0 @@
-requests
-bs4
-nest_asyncio
-ebooklib
-tqdm
